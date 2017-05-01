@@ -2,13 +2,13 @@
 ##  IMPORTS  ##
 ###############
 
-from selenium import webdriver
 from bs4 import BeautifulSoup
 from functools import reduce
 from pprint import pprint
 import threading
 import requests
 import warnings
+import random
 import numpy
 import time
 import sys
@@ -21,28 +21,38 @@ warnings.filterwarnings("ignore")
 #################
 
 # Logging Into indeed.com
-def log_into_indeed():
+def log_into_indeed(thread_id):
+	# Sideline Number: 617-539-8135
 	login_url = 'https://secure.indeed.com/account/login'
+	credentials = {
+		0:{'email':'samlatters@hotmail.com', 'password':'myp4ssword@1'},
+		1:{'email':'jessicalim2@hotmail.com', 'password':'myp4ssword@2'},
+		2:{'email':'sallymoss343@hotmail.com', 'password':'myp4ssword@3'},
+		3:{'email':'lillydavis12@hotmail.com', 'password':'myp4ssword@4'},
+		4:{'email':'robbietran@hotmail.com', 'password':'myp4ssword@5'},
+		5:{'email':'tywatson899@hotmail.com', 'password':'myp4ssword@6'}
+	}
 	data = {
 		'action':'Login',
-		'__email':'ptj2009@yahoo.com',
-		'__password':'chobani1',
+		'__email':credentials[thread_id]['email'],
+		'__password':credentials[thread_id]['password'],
 		'remember':'1',
 		'hl':'en',
 		'continue':'/account/view?hl=en'
 	}
 	session_requests = requests.session()
 	response = session_requests.post(login_url,data=data)
-	return session_requests
+	return session_requests, data['__email']
 
 # Pulling Webpage Content
 def pull_webpage(url,session_requests):
-	#driver = webdriver.Firefox()
-	#driver.set_page_load_timeout(5)
-	#driver.get(url)
-	#soup = BeautifulSoup(driver.page_source,'html.parser')
-	page = session_requests.get(url)
-	soup = BeautifulSoup(page.content,'html.parser')
+	try:
+		page = session_requests.get(url)
+		soup = BeautifulSoup(page.content,'html.parser')
+	except:
+		time.sleep(30)
+		page = session_requests.get(url)
+		soup = BeautifulSoup(page.content,'html.parser')
 	return soup
 
 # Remove All Non-ASCII From A String
@@ -57,11 +67,12 @@ def clean_string(string):
 def indeed_search(thread_id,n_threads):
 
 	# Logging Into Indeed
-	session_requests = log_into_indeed()
+	session_requests, email = log_into_indeed(thread_id)
 
 	resumes = {}
 	resumes_count = {'thread_' + str(thread_id) : 0}
 	f_out = open('resume_scraping_output_' + str(thread_id) + '.txt','w')
+	wait_time = 4.0 + random.randint(0,2)
 
 	# Iterating Over Job Types
 	f_jobs = open('resume_scraping_job_titles.txt','r')
@@ -78,6 +89,7 @@ def indeed_search(thread_id,n_threads):
 		resumes[job_type] = {}
 		resumes_offset = thread_id * 50
 		url = 'https://www.indeed.com/resumes?q=' + job_type.replace(' ','+') + '&co=US&start=' + str(resumes_offset)
+		time.sleep(wait_time)
 		soup = pull_webpage(url,session_requests)
 		resume_links = soup.find_all('a',class_='app_link')
 		for resume_link in resume_links:
@@ -85,11 +97,11 @@ def indeed_search(thread_id,n_threads):
 			if '/r/' in href:
 				resumes[job_type]['https://www.indeed.com' + href] = {}
 
-		# if len(resumes[job_type]) == 0:
-		# 	print soup
-		# 	sys.exit()
-
 		# Grabbing Resumes
+		print 'thread: ' + str(thread_id) + ' (' + email + '); starting job type: ' + str(job_type) + '; num_resumes: ' + str(len(resumes[job_type]))
+		if len(resumes[job_type]) == 0:
+			time.sleep(300)
+			continue
 		for resume in resumes[job_type]:
 			resumes[job_type][resume]['resume_link'] = resume
 			soup = pull_webpage(resume,session_requests)
@@ -107,11 +119,15 @@ def indeed_search(thread_id,n_threads):
 				# Storing Basic Info
 				resumes[job_type][resume]['resume_contact'] = resume_contact
 				resumes[job_type][resume]['resume_summary'] = resume_summary
-
-			# if resume_contact == '':
-			# 	print '\n\n\n'
-			# 	print soup
-			# 	sys.exit()
+				# Checking Info Proper Info Exists
+				if resumes[job_type][resume]['resume_contact'] == '':
+					resumes[job_type][resume] = {}
+					time.sleep(wait_time)
+					continue
+			else:
+				resumes[job_type][resume] = {}
+				time.sleep(wait_time)
+				continue
 
 			# Work Experience
 			work_experience = soup.find_all('div',class_='section-item workExperience-content')
@@ -176,21 +192,19 @@ def indeed_search(thread_id,n_threads):
 			resumes[job_type][resume]['skills'] = skills
 
 			# Output And Tracking
-			time.sleep(1)
-			resumes_count['thread_' + str(thread_id)] = resumes_count['thread_' + str(thread_id)] + 1
+			time.sleep(wait_time)
+			cur_thread = 'thread_' + str(thread_id)
+			resumes_count[cur_thread] = resumes_count[cur_thread] + 1
 			resumes_count[job_type] = resumes_count[job_type] + 1
 			f_out.write(str(resumes[job_type][resume]) + '\n\n')
-			if resumes_count[job_type] % 2 == 0:
-				thread_resumes_count = str(resumes_count['thread_' + str(thread_id)])
-				print 'thread: ' + str(thread_id) + '; resume_count: ' + thread_resumes_count + '; on job type: ' + str(job_type)
-				#time.sleep(1)
-				break
+			if resumes_count[cur_thread] % 25 == 0:
+				print 'thread: ' + str(thread_id) + '; resume_count: ' + str(resumes_count[cur_thread]) + '; on job type: ' + str(job_type)
 
 	f_out.close()
 	return
 
 # Threading Process For Pulling Resumes From indeed.com
-def indeed_search_threading(n_threads=4):
+def indeed_search_threading(n_threads=6):
 
 	# Threading Object
 	class resumeThread(threading.Thread):
@@ -198,7 +212,6 @@ def indeed_search_threading(n_threads=4):
 			threading.Thread.__init__(self)
 			self.threadID = threadID
 		def run(self):
-			print "Starting Thread " + str(self.threadID)
 			indeed_search(self.threadID,n_threads)
 			print "Exiting Thread " + str(self.threadID)
 
@@ -207,9 +220,15 @@ def indeed_search_threading(n_threads=4):
 	for n in range(0,n_threads):
 		thread_list.append(resumeThread(n,n_threads))
 	for n in range(0,n_threads):
+		thread_list[n].daemon=True
 		thread_list[n].start()
-	for thread in thread_list:
-		thread.join()
+	try:
+		for thread in thread_list:
+			while thread.isAlive():
+				thread.join(1)
+	except:
+		print '\n! Received keyboard interrupt, quitting threads.\n'
+		sys.exit()
 
 	# Consolidating Output Files
 	with open('resume_scraping_output.txt', 'w') as outfile:
@@ -224,5 +243,10 @@ def indeed_search_threading(n_threads=4):
 ##  MAIN  ##
 ############
 
-# Pulling Resumes From indeed.com
-indeed_search_threading()
+def main():
+
+	# Pulling Resumes From indeed.com
+	indeed_search_threading()
+
+if __name__ == '__main__':
+	main()

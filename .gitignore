@@ -1,2 +1,15 @@
 R2W_env/
+R2W_py3_env/
+
+nlp_opensource_models/
+wheels_for_windows/
+
+resume_scraping_output_data/
+tmp/
+resume_embedded_data.txt
+resume_embedded_vectors.txt
+resume_scraping_output.txt
+resume_scraping_output_small.txt
+
+
 
